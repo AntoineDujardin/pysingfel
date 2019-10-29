@@ -329,9 +329,9 @@ class Particle(object):
                                          a5 * np.exp(-b5 * self.q_sample ** 2) + c)
                         flag = False
                         break
-                        if flag:
-                            print('Atom number = ' + str(zz) + ' with charge ' + str(qq))
-                            raise ValueError('Unrecognized atom type!')
+                if flag:
+                    print('Atom number = ' + str(zz) + ' with charge ' + str(qq))
+                    raise ValueError('Unrecognized atom type!')
             else:
                 zz = int(atoms[i, 3])  # atom type
                 qq = int(atoms[i, 4])  # charge
@@ -350,9 +350,9 @@ class Particle(object):
                         self.ff_table = np.vstack((self.ff_table, ff))
                         flag = False
                         break
-                    if flag:
-                        print('Atom number = ' + str(zz) + ' with charge ' + str(qq))
-                        raise ValueError('Unrecognized atom type!')
+                if flag:
+                    print('Atom number = ' + str(zz) + ' with charge ' + str(qq))
+                    raise ValueError('Unrecognized atom type!')
 
 
 def rotate_particle(quaternion, particle):
