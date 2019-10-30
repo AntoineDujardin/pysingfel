@@ -136,7 +136,7 @@ class Particle(object):
             self.sBound = f.get(datasetname + '/Sq_bound').value
             self.nFree = f.get(datasetname + '/Sq_free').value
 
-    def read_pdb(self, fname, ff='WK'):
+    def read_pdb(self, fname, ff='WK', control_occupancy=True):
         """
         Get particle information from reading pdb file.
         Implement the necessary transformation to different chains of the particle based on
@@ -145,10 +145,11 @@ class Particle(object):
 
         :param fname: The file name of the pdb file to read
         :param ff: The form factor table to use
+        :param control_occupancy: Whether to filter out atoms based on occupancy or take them all
         :return:
         """
 
-        atoms = symmpdb(fname, ff)
+        atoms = symmpdb(fname, ff, control_occupancy)
         self.atom_pos = atoms[:, 0:3] / 10 ** 10  # convert unit from Angstroms to m
         tmp = (100 * atoms[:, 3] + atoms[:, 4]).astype(
             int)  # hack to get split idx from the sorted atom array
