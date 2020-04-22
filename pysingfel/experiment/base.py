@@ -21,6 +21,9 @@ class Experiment(object):
         import pysingfel.gpu as pg
         self.volumes = []
         for particle in particles:
+            if particle is None:
+                self.volumes.append(np.zeros(mesh.shape[:-1], np.complex128))
+                continue
             self.volumes.append(
                 pg.calculate_diffraction_pattern_gpu(mesh, particle, return_type='complex_field'))
 
