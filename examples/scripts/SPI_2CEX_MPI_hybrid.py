@@ -42,8 +42,8 @@ import pysingfel.gpu as pg
 from pysingfel.util import asnumpy, xp
 
 
-#if RANK == 0:
-    #assert SIZE > 3, "This script is planed for at least 4 ranks."
+if RANK == 0:
+    assert SIZE > 1, "This script is planed for at least 2 ranks."
 
 beam = ps.Beam(ROOT_DIR+'/examples/input/beam/amo86615.beam')
 #beam.set_photons_per_pulse(beam.get_photons_per_pulse()*100)
