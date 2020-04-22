@@ -61,7 +61,10 @@ COMM.Bcast(buffer, root=1)
 
 start = time.perf_counter()
 
-N_images = 10
+if RANK == 1:
+    N_images = 100
+else:
+    N_images = 10
 
 #f = h5.File("/reg/neh/home/dujardin/scratch/2CEX-new.h5", "w")
 
