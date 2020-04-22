@@ -12,9 +12,12 @@ COMM = MPI.COMM_WORLD
 RANK = COMM.Get_rank()
 SIZE = COMM.size
 
+MASTER_RANK = 0
+GPU_RANKS = (1,)
+
 import os
 # Only rank 1 uses the GPU/cupy.
-os.environ["USE_CUPY"] = '1' if RANK == 1 else '0'
+os.environ["USE_CUPY"] = '1' if RANK in GPU_RANKS else '0'
 # Unlock parallel but non-MPI HDF5
 os.environ["HDF5_USE_FILE_LOCKING"] = 'FALSE'
 
@@ -36,7 +39,7 @@ from tqdm import tqdm
 
 import pysingfel as ps
 import pysingfel.gpu as pg
-from pysingfel.util import asnumpy
+from pysingfel.util import asnumpy, xp
 
 
 #if RANK == 0:
@@ -54,7 +57,7 @@ N_batches = 500
 N_images_tot = N_images_per_batch * N_batches
 FNAME = "/reg/neh/home/dujardin/scratch/2CEX-new.h5"
 
-if RANK == 0:
+if RANK == MASTER_RANK:
     f = h5.File(FNAME, "w")
     f.create_dataset("pixel_position_reciprocal",
                      data=det.pixel_position_reciprocal)
@@ -62,24 +65,26 @@ if RANK == 0:
     f.close()
 
 # Create a particle object
-if RANK == 1:
+if RANK == GPU_RANKS[0]:
     particle = ps.Particle()
     particle.read_pdb(ROOT_DIR+'/examples/input/pdb/2CEX.pdb', ff='WK')
     experiment = ps.SPIExperiment(det, beam, particle)
-    buffer = asnumpy(experiment.volumes[0])
 else:
     experiment = ps.SPIExperiment(det, beam, None)
-    buffer = experiment.volumes[0]
+buffer = asnumpy(experiment.volumes[0])
 
 sys.stdout.flush()
 
 # Exchange
 COMM.Bcast(buffer, root=1)
 
+if RANK in GPU_RANKS[1:]:
+    experiment.volumes[0] = xp.asarray(experiment.volumes[0])
+
 N_images_processed = 0
 start = time.perf_counter()
 
-if RANK == 0:
+if RANK == MASTER_RANK:
     for batch_n in tqdm(range(N_batches)):
         # Send batch numbers to ranks
         i_rank = COMM.recv(source=MPI.ANY_SOURCE)
@@ -94,8 +99,8 @@ else:
 
     while True:
         # Ask for more data
-        COMM.send(RANK, dest=0)
-        batch_n = COMM.recv(source=0)
+        COMM.send(RANK, dest=MASTER_RANK)
+        batch_n = COMM.recv(source=MASTER_RANK)
         if batch_n is None:
             break
         for i in range(N_images_per_batch):
@@ -108,11 +113,17 @@ else:
 
 stop = time.perf_counter()
 
-print(f"Rank {RANK} generated {N_images_processed} images in "
-      f"{datetime.timedelta(seconds=round(stop-start))}s.")
+sys.stdout.flush()
+COMM.barrier()
+if RANK in GPU_RANKS:
+    print(f"GPU rank {RANK} generated {N_images_processed} images in "
+          f"{datetime.timedelta(seconds=round(stop-start))}s.")
+elif RANK > 1:
+    print(f"CPU rank {RANK} generated {N_images_processed} images in "
+          f"{datetime.timedelta(seconds=round(stop-start))}s.")
 
 sys.stdout.flush()
 COMM.barrier()
-if RANK == 0:
+if RANK == MASTER_RANK:
     print(f"Total script generated {N_images_tot} images in "
           f"{datetime.timedelta(seconds=round(stop-start))}s.")
