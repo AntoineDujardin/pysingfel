@@ -57,12 +57,9 @@ N_batches = 500
 N_images_tot = N_images_per_batch * N_batches
 FNAME = "/reg/neh/home/dujardin/scratch/2CEX-new.h5"
 
-if RANK == MASTER_RANK:
-    f = h5.File(FNAME, "w")
-    f.create_dataset("pixel_position_reciprocal",
-                     data=det.pixel_position_reciprocal)
-    f.create_dataset("slices", (N_images_tot, 4, 512, 512), np.float)
-    f.close()
+given_orientations = True
+if given_orientations and RANK == MASTER_RANK:
+    orientations = ps.get_uniform_quat(N_images_tot, True)
 
 # Create a particle object
 if RANK == GPU_RANKS[0]:
@@ -81,6 +78,18 @@ COMM.Bcast(buffer, root=1)
 if RANK in GPU_RANKS[1:]:
     experiment.volumes[0] = xp.asarray(experiment.volumes[0])
 
+if RANK == MASTER_RANK:
+    f = h5.File(FNAME, "w")
+    f.create_dataset("pixel_position_reciprocal",
+                     data=det.pixel_position_reciprocal)
+    f.create_dataset("volume", data=experiment.volumes[0])
+    f.create_dataset("orientations", data=orientations)
+    f.create_dataset("intensities", (N_images_tot, 4, 512, 512), np.float)
+    f.create_dataset("photons", (N_images_tot, 4, 512, 512), np.int)
+    f.close()
+
+COMM.barrier()  # Make sure file is created before others open it.
+
 N_images_processed = 0
 start = time.perf_counter()
 
@@ -88,14 +97,19 @@ if RANK == MASTER_RANK:
     for batch_n in tqdm(range(N_batches)):
         # Send batch numbers to ranks
         i_rank = COMM.recv(source=MPI.ANY_SOURCE)
+        batch_start = batch_n * N_images_per_batch
+        batch_end = (batch_n+1) * N_images_per_batch
         COMM.send(batch_n, dest=i_rank)
+        if given_orientations:
+            COMM.send(orientations[batch_start:batch_end], dest=i_rank)
     for _ in range(SIZE-1):
         # Send one "None" to each rank as final flag
         i_rank = COMM.recv(source=MPI.ANY_SOURCE)
         COMM.send(None, dest=i_rank)
 else:
     f = h5.File(FNAME, "r+")
-    h5_slices = f["slices"]
+    h5_intensities = f["intensities"]
+    h5_photons = f["photons"]
 
     while True:
         # Ask for more data
@@ -103,10 +117,15 @@ else:
         batch_n = COMM.recv(source=MASTER_RANK)
         if batch_n is None:
             break
+        if given_orientations:
+            orientations = COMM.recv(source=MASTER_RANK)
+            experiment.set_orientations(orientations)
         for i in range(N_images_per_batch):
             idx = batch_n*N_images_per_batch + i
-            img = experiment.generate_image_stack()
-            h5_slices[idx] = asnumpy(img)
+            photons, intensities = experiment.generate_image_stack(
+                return_photons=True, return_intensities=True)
+            h5_photons[idx] = asnumpy(photons)
+            h5_intensities[idx] = asnumpy(intensities)
             N_images_processed += 1
 
     f.close()
