@@ -52,9 +52,15 @@ beam = ps.Beam(ROOT_DIR+'/examples/input/beam/amo86615.beam')
 det = ps.PnccdDetector(geom=ROOT_DIR+'/examples/lcls/amo86615/PNCCD::CalibV1/Camp.0:pnCCD.1/geometry/0-end.data',
                        beam=beam)
 
+N_images_tot = 10000
 N_images_per_batch = 20
-N_batches = 500
-N_images_tot = N_images_per_batch * N_batches
+if RANK == MASTER_RANK:
+    if N_images_tot % N_images_per_batch:
+        raise ValueError(
+            f"N_images_per_batch ({N_images_per_batch}) "
+            f"should divide N_images_tot ({N_images_tot}).")
+N_batches = N_images_tot // N_images_per_batch
+
 FNAME = "/reg/neh/home/dujardin/scratch/2CEX-new.h5"
 
 given_orientations = True
