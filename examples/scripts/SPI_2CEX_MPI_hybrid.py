@@ -67,6 +67,7 @@ given_orientations = True
 if given_orientations and RANK == MASTER_RANK:
     orientations = ps.get_uniform_quat(N_images_tot, True)
 
+save_volume = False
 with_intensities = False
 
 # Create a particle object
@@ -90,7 +91,8 @@ if RANK == MASTER_RANK:
     f = h5.File(FNAME, "w")
     f.create_dataset("pixel_position_reciprocal",
                      data=det.pixel_position_reciprocal)
-    f.create_dataset("volume", data=experiment.volumes[0])
+    if save_volume:
+        f.create_dataset("volume", data=experiment.volumes[0])
     f.create_dataset("orientations", data=orientations)
     f.create_dataset("photons", (N_images_tot, 4, 512, 512), np.int32)
     if with_intensities:
