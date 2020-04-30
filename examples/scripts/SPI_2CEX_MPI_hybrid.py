@@ -69,6 +69,9 @@ if given_orientations and RANK == MASTER_RANK:
 
 save_volume = False
 with_intensities = False
+photons_dtype = np.uint8
+
+photons_max = np.iinfo(photons_dtype).max
 
 # Create a particle object
 if RANK == GPU_RANKS[0]:
@@ -94,7 +97,7 @@ if RANK == MASTER_RANK:
     if save_volume:
         f.create_dataset("volume", data=experiment.volumes[0])
     f.create_dataset("orientations", data=orientations)
-    f.create_dataset("photons", (N_images_tot, 4, 512, 512), np.int32)
+    f.create_dataset("photons", (N_images_tot, 4, 512, 512), photons_dtype)
     if with_intensities:
         f.create_dataset(
             "intensities", (N_images_tot, 4, 512, 512), np.float32)
@@ -125,7 +128,7 @@ else:
         h5_intensities = f["intensities"]
 
     while True:
-        np_photons = np.zeros((N_images_per_batch, 4, 512, 512), np.int32)
+        np_photons = np.zeros((N_images_per_batch, 4, 512, 512), photons_dtype)
         if with_intensities:
             np_intensities = np.zeros(
                 (N_images_per_batch, 4, 512, 512), np.float32)
@@ -146,7 +149,11 @@ else:
             image_stack_tuple = experiment.generate_image_stack(
                 return_photons=True, return_intensities=with_intensities,
                 always_tuple=True)
-            np_photons[i] = asnumpy(image_stack_tuple[0].astype(np.int32))
+            photons = image_stack_tuple[0]
+            if photons.max() > photons_max:
+                raise RuntimeError("Value of photons too large for type "
+                                   f"{photons_dtype}.")
+            np_photons[i] = asnumpy(photons.astype(photons_dtype))
             if with_intensities:
                 np_intensities[i] = asnumpy(
                     image_stack_tuple[1].astype(np.float32))
