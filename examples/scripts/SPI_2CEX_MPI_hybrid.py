@@ -67,6 +67,8 @@ given_orientations = True
 if given_orientations and RANK == MASTER_RANK:
     orientations = ps.get_uniform_quat(N_images_tot, True)
 
+with_intensities = False
+
 # Create a particle object
 if RANK == GPU_RANKS[0]:
     particle = ps.Particle()
@@ -90,8 +92,10 @@ if RANK == MASTER_RANK:
                      data=det.pixel_position_reciprocal)
     f.create_dataset("volume", data=experiment.volumes[0])
     f.create_dataset("orientations", data=orientations)
-    f.create_dataset("intensities", (N_images_tot, 4, 512, 512), np.float)
-    f.create_dataset("photons", (N_images_tot, 4, 512, 512), np.int)
+    f.create_dataset("photons", (N_images_tot, 4, 512, 512), np.int32)
+    if with_intensities:
+        f.create_dataset(
+            "intensities", (N_images_tot, 4, 512, 512), np.float32)
     f.close()
 
 COMM.barrier()  # Make sure file is created before others open it.
@@ -114,25 +118,41 @@ if RANK == MASTER_RANK:
         COMM.send(None, dest=i_rank)
 else:
     f = h5.File(FNAME, "r+")
-    h5_intensities = f["intensities"]
     h5_photons = f["photons"]
+    if with_intensities:
+        h5_intensities = f["intensities"]
 
     while True:
+        np_photons = np.zeros((N_images_per_batch, 4, 512, 512), np.int32)
+        if with_intensities:
+            np_intensities = np.zeros(
+                (N_images_per_batch, 4, 512, 512), np.float32)
+
         # Ask for more data
         COMM.send(RANK, dest=MASTER_RANK)
         batch_n = COMM.recv(source=MASTER_RANK)
         if batch_n is None:
             break
+        batch_start = batch_n * N_images_per_batch
+        batch_end = (batch_n+1) * N_images_per_batch
+
         if given_orientations:
             orientations = COMM.recv(source=MASTER_RANK)
             experiment.set_orientations(orientations)
+
         for i in range(N_images_per_batch):
-            idx = batch_n*N_images_per_batch + i
-            photons, intensities = experiment.generate_image_stack(
-                return_photons=True, return_intensities=True)
-            h5_photons[idx] = asnumpy(photons)
-            h5_intensities[idx] = asnumpy(intensities)
+            image_stack_tuple = experiment.generate_image_stack(
+                return_photons=True, return_intensities=with_intensities,
+                always_tuple=True)
+            np_photons[i] = asnumpy(image_stack_tuple[0].astype(np.int32))
+            if with_intensities:
+                np_intensities[i] = asnumpy(
+                    image_stack_tuple[1].astype(np.float32))
             N_images_processed += 1
+
+        h5_photons[batch_start:batch_end] = np_photons
+        if with_intensities:
+            h5_intensities[batch_start:batch_end] = np_intensities
 
     f.close()
 
